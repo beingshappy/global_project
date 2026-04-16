@@ -20,7 +20,13 @@ exports.toggleAI = async (req, res) => {
 
       console.log(`🚀 Booting AI Engine for ${cameraId}...`);
       const aiModulePath = path.resolve(__dirname, '../../ai-module');
-      const pythonPath = 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+      
+      // Retrieve Python path from environment variable
+      const pythonPath = process.env.PYTHON_PATH || 'python';
+      
+      if (!process.env.PYTHON_PATH) {
+        console.warn('⚠️ PYTHON_PATH not found in .env. Falling back to global "python" command.');
+      }
       
       // Fetch Config for the flags
       const Config = require('../models/Config');
@@ -36,29 +42,29 @@ exports.toggleAI = async (req, res) => {
         '--lowlight', config.lowLight ? 'true' : 'false'
       ];
 
-      const process = spawn(pythonPath, flags, {
+      const aiProcess = spawn(pythonPath, flags, {
         cwd: aiModulePath,
         shell: true
       });
 
-      process.stdout.on('data', (data) => {
+      aiProcess.stdout.on('data', (data) => {
         console.log(`[${cameraId}]: ${data}`);
       });
 
-      process.stderr.on('data', (data) => {
+      aiProcess.stderr.on('data', (data) => {
         console.error(`[${cameraId} ERROR]: ${data}`);
       });
 
-      process.on('error', (err) => {
+      aiProcess.on('error', (err) => {
         console.error(`❌ Failed to start AI process for ${cameraId}:`, err);
       });
 
-      process.on('close', (code) => {
+      aiProcess.on('close', (code) => {
         console.log(`[${cameraId}] Process exited with code ${code}`);
         delete activeCameras[cameraId];
       });
 
-      activeCameras[cameraId] = { process, source };
+      activeCameras[cameraId] = { process: aiProcess, source };
       return res.json({ msg: `${cameraId} booted successfully.`, status: 'ONLINE' });
     }
 
@@ -72,9 +78,19 @@ exports.toggleAI = async (req, res) => {
       }
 
       console.log(`🛑 Shutting down AI Engine for ${cameraId}...`);
-      activeCameras[cameraId].process.kill('SIGINT');
+      const camProc = activeCameras[cameraId].process;
+      
+      // Windows needs taskkill to properly terminate child processes
+      if (process.platform === 'win32') {
+        const { exec } = require('child_process');
+        exec(`taskkill /pid ${camProc.pid} /T /F`, (err) => {
+          if (err) console.error('taskkill error:', err.message);
+        });
+      } else {
+        camProc.kill('SIGTERM');
+      }
+      
       delete activeCameras[cameraId];
-
       return res.json({ msg: `${cameraId} shutdown successful.`, status: 'OFFLINE' });
     }
 

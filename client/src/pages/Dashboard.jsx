@@ -7,7 +7,7 @@ import { AlertTriangle, Clock, MapPin, Users, Activity, ShieldCheck, Zap, Histor
 const Dashboard = () => {
   const [events, setEvents] = useState([]);
   const [activeNodeCount, setActiveNodeCount] = useState(0);
-  const { alerts } = useContext(SocketContext);
+  const { alerts, clearAlerts } = useContext(SocketContext);
   const { token } = useContext(AuthContext);
 
   useEffect(() => {
@@ -33,8 +33,23 @@ const Dashboard = () => {
     if (token) fetchData();
   }, [token]);
 
+  // Real-time Event Sync: Update detections list when a new live alert arrives
+  useEffect(() => {
+    if (alerts.length > 0) {
+      const latestAlert = alerts[0];
+      if (latestAlert.event_id) {
+        // Prevent duplicate entries if the initial fetch and first socket event overlap
+        setEvents(prev => {
+          const exists = prev.some(e => e._id === latestAlert.event_id._id);
+          if (exists) return prev;
+          return [latestAlert.event_id, ...prev];
+        });
+      }
+    }
+  }, [alerts]);
+
   const stats = [
-    { name: 'Active Nodes', value: activeNodeCount.toString(), icon: Activity, color: 'text-primary' },
+    { name: 'Active Cameras', value: activeNodeCount.toString(), icon: Activity, color: 'text-primary' },
     { name: 'Total Detections', value: events.length.toString(), icon: ShieldCheck, color: 'text-success' },
     { name: 'Live Threats', value: alerts.length.toString(), icon: AlertTriangle, color: 'text-danger' },
     { name: 'System Pulse', value: activeNodeCount > 0 ? 'Tactical' : 'Standby', icon: Zap, color: 'text-secondary' },
@@ -46,11 +61,11 @@ const Dashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-4xl font-extrabold tracking-tight text-white mb-2">Security Overview</h2>
-          <p className="text-slate-400 font-medium">Real-time surveillance & threat analysis gateway</p>
+          <p className="text-slate-400 font-medium">Real-time security monitoring dashboard</p>
         </div>
         <div className="flex items-center gap-3 px-6 py-3 bg-success/10 border border-success/20 rounded-2xl">
           <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
-          <span className="text-success text-sm font-bold uppercase tracking-widest">Enclave Secured</span>
+          <span className="text-success text-sm font-bold uppercase tracking-widest">System Safe</span>
         </div>
       </div>
 
@@ -72,12 +87,21 @@ const Dashboard = () => {
       {/* Live Alerts Area */}
       {alerts.length > 0 && (
         <section className="animate-in fade-in slide-in-from-bottom-5 duration-700">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="px-4 py-1.5 bg-danger/10 border border-danger/20 rounded-full flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-danger animate-ping"></span>
-              <span className="text-danger text-[10px] font-black uppercase tracking-[0.2em]">Active Violations</span>
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="px-4 py-1.5 bg-danger/10 border border-danger/20 rounded-full flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-danger animate-ping"></span>
+                <span className="text-danger text-[10px] font-black uppercase tracking-[0.2em]">Active Alerts</span>
+              </div>
+              <div className="h-px w-24 bg-gradient-to-r from-danger/20 to-transparent hidden md:block"></div>
             </div>
-            <div className="h-px flex-1 bg-gradient-to-r from-danger/20 to-transparent"></div>
+            
+            <button 
+              onClick={clearAlerts}
+              className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-slate-400 uppercase tracking-widest transition-all hover:text-white"
+            >
+              Clear All Alerts
+            </button>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

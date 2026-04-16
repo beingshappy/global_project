@@ -3,15 +3,14 @@ import time
 import requests
 import base64
 import numpy as np
+import socketio
+import platform
+import threading
 from datetime import datetime
 from ultralytics import YOLO
 from logic.risk_detector import analyze_risk
 from logic.gesture_detector import GestureDetector
-
-# NOTE: For faster real-time processing you can use a smaller YOLO model or skip DeepFace per frame.
-# We will use DeepFace for gender classification.
 from deepface import DeepFace
-
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -24,173 +23,220 @@ args = parser.parse_args()
 
 # Configuration
 API_URL = "http://localhost:5000/api/events"
+SOCKET_URL = "http://localhost:5000"
 CAMERA_ID = int(args.source) if args.source.isdigit() else args.source
 CAMERA_NAME = args.camera_id
+NODE_ID = args.camera_id 
 CONF_THRESHOLD = args.confidence
 DEEPFACE_ENABLED = args.deepface.lower() == 'true'
 LOWLIGHT_ENABLED = args.lowlight.lower() == 'true'
 
-FRAME_SKIP = 10 # Process every 10th frame to save CPU
-COOLDOWN_SECONDS = 5 # Avoid spamming the API
+# Optimizations
+FRAME_SKIP_HEAVY = 12
+FRAME_SKIP_FAST = 3
+COOLDOWN_SECONDS = 20
+STREAM_FPS = 15
+
+# Global AI Variables (Loaded in background)
+yolo_model = None
+gesture_detector = None
+models_loaded = False
+
+# Initialize Socket.io Client
+sio = socketio.Client()
+
+@sio.event
+def connect():
+    print(f"✅ Connected to Dashboard Stream Server | Node: {NODE_ID}")
+
+@sio.event
+def disconnect():
+    print(f"❌ Disconnected from Dashboard Stream Server")
+
+def try_connect_socket():
+    for i in range(3):
+        try:
+            sio.connect(SOCKET_URL, transports=['websocket'])
+            return
+        except Exception as e:
+            time.sleep(1)
+
+def load_models_async():
+    global yolo_model, gesture_detector, models_loaded
+    try:
+        print("🧠 Loading AI Models in background...")
+        yolo_model = YOLO("yolov8n.pt") 
+        gesture_detector = GestureDetector()
+        models_loaded = True
+        print("✨ AI System Ready.")
+    except Exception as e:
+        print(f"❌ [LazyLoad] Error loading models: {e}")
 
 def enhance_low_light(frame):
-    """Applies histogram equalization to handle low light conditions"""
-    # Convert to YUV to equalize only the illuminance channel
     img_yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)
     img_yuv[:, :, 0] = cv2.equalizeHist(img_yuv[:, :, 0])
     return cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
 
-def encode_frame(frame):
-    """Encodes frame to Base64 for the API"""
-    _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+def encode_frame(frame, quality=70):
+    _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     return "data:image/jpeg;base64," + base64.b64encode(buffer).decode('utf-8')
 
+def enhance_low_light(frame):
+    """
+    Applies CLAHE (Contrast Limited Adaptive Histogram Equalization) to 
+    improve visibility in low-light conditions.
+    """
+    try:
+        # Convert to YUV to separate luma from chroma
+        yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8,8))
+        # Enhance luma channel (Y)
+        yuv[:,:,0] = clahe.apply(yuv[:,:,0])
+        # Convert back
+        return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
+    except Exception as e:
+        print(f"⚠️ Enhancement Error: {e}")
+        return frame
+
 def main():
-    print("Initialize Models...")
-    yolo_model = YOLO("yolov8n.pt") # Nanomodel for speed
-    gesture_detector = GestureDetector()
+    print(f"🚀 Starting Camera: {NODE_ID}")
     
-    cap = cv2.VideoCapture(CAMERA_ID)
-    if not cap.isOpened():
-        print("Error: Could not open camera.")
+    # 1. Start Model Load in Background Thread
+    threading.Thread(target=load_models_async, daemon=True).start()
+
+    # 2. Connect Socket
+    try_connect_socket()
+
+    # 3. Open Camera (Optimization: CAP_DSHOW for Windows)
+    print(f"📸 Opening Camera: {CAMERA_ID}...")
+    backend = cv2.CAP_DSHOW if (platform.system() == 'Windows' and isinstance(CAMERA_ID, int)) else cv2.CAP_ANY
+    
+    cap = None
+    for attempt in range(1, 4):
+        cap = cv2.VideoCapture(CAMERA_ID, backend)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                print(f"✅ Camera online on attempt {attempt}")
+                break
+        cap.release()
+        time.sleep(1)
+    else:
+        print("❌ Error: Could not open camera.")
+        sio.disconnect()
         return
 
-    print("System Online. Monitoring CV feed...")
+    print("🛰️ Starting live feed...")
     frame_count = 0
     last_alert_time = 0
     
-    # Caching variables to prevent flickering on skipped frames
     last_persons = []
     last_persons_labels = []
     last_alert_text = ""
     last_alert_clear_time = 0
+    
+    women_count = 0
+    men_count = 0
+    is_sos = False
 
     while True:
+        loop_start = time.time()
         ret, frame = cap.read()
         if not ret:
-            break
+            time.sleep(0.1)
+            continue
             
         frame_count += 1
-        
-        # Display the raw feed always (optional)
         display_frame = frame.copy()
 
-        # Process every Nth frame
-        if frame_count % FRAME_SKIP == 0:
-            
-            # 1. Low light enhancement (Optional)
-            proc_frame = enhance_low_light(frame) if LOWLIGHT_ENABLED else frame.copy()
-            
-            # 2. YOLO Human Detection
-            results = yolo_model(proc_frame, classes=[0], verbose=False) # Class 0 is person
-            
-            last_persons = []
-            
-            for r in results:
-                boxes = r.boxes
-                for box in boxes:
-                    x1, y1, x2, y2 = [int(i) for i in box.xyxy[0]]
-                    conf = float(box.conf[0])
-                    
-                    if conf > CONF_THRESHOLD:
-                        last_persons.append((x1, y1, x2, y2))
-            
-            women_count = 0
-            men_count = 0
-            last_persons_labels = []
-            
-            # 3. Gender Classification (Optional)
-            if DEEPFACE_ENABLED:
-                for (x1, y1, x2, y2) in last_persons:
-                    h, w, _ = proc_frame.shape
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(w, x2), min(h, y2)
-                    
-                    crop = proc_frame[y1:y2, x1:x2]
-                    if crop.size == 0: 
-                        last_persons_labels.append(("Unknown", (0, 255, 0)))
-                        continue
-                    
-                    try:
-                        analysis = DeepFace.analyze(crop, actions=['gender'], enforce_detection=False, silent=True)
-                        if isinstance(analysis, list): analysis = analysis[0]
-                        dominant_gender = analysis['dominant_gender']
-                        
-                        if dominant_gender == 'Woman':
-                            women_count += 1
-                            last_persons_labels.append(("Woman", (0, 0, 255)))
-                        else:
-                            men_count += 1
-                            last_persons_labels.append(("Man", (255, 0, 0)))
-                    except Exception as e:
-                        last_persons_labels.append(("Person", (0, 255, 0)))
-            else:
-                # If DeepFace is disabled, count all as People
-                for (x1, y1, x2, y2) in last_persons:
-                    last_persons_labels.append(("Detect", (0, 255, 0)))
-                # For demo logic, split counts if disabled? No, just keep 0 for gender.
+        # ─── A. AI PROCESSING (Only if models are loaded) ───
+        if models_loaded:
+            # 1. FAST DETECTION (SOS)
+            if frame_count % FRAME_SKIP_FAST == 0:
+                is_sos, _ = gesture_detector.detect_sos(display_frame)
 
+            # 2. HEAVY DETECTION (YOLO/DeepFace)
+            if frame_count % FRAME_SKIP_HEAVY == 0:
+                proc_frame = enhance_low_light(frame) if LOWLIGHT_ENABLED else frame.copy()
+                results = yolo_model(proc_frame, classes=[0], verbose=False)
+                
+                last_persons = []
+                for r in results:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = [int(i) for i in box.xyxy[0]]
+                        if float(box.conf[0]) > CONF_THRESHOLD:
+                            last_persons.append((x1, y1, x2, y2))
+                
+                women_count = 0
+                men_count = 0
+                last_persons_labels = []
+                
+                if DEEPFACE_ENABLED and len(last_persons) > 0:
+                    for (x1, y1, x2, y2) in last_persons:
+                        crop = proc_frame[max(0,y1):min(proc_frame.shape[0],y2), max(0,x1):min(proc_frame.shape[1],x2)]
+                        if crop.size > 0:
+                            try:
+                                analysis = DeepFace.analyze(crop, actions=['gender'], enforce_detection=False, silent=True)
+                                gen = analysis[0]['dominant_gender'] if isinstance(analysis, list) else analysis['dominant_gender']
+                                if gen == 'Woman':
+                                    women_count += 1
+                                    last_persons_labels.append(("Woman", (255, 100, 180)))
+                                else:
+                                    men_count += 1
+                                    last_persons_labels.append(("Man", (100, 180, 255)))
+                            except:
+                                last_persons_labels.append(("Person", (0, 220, 100)))
+                else:
+                    for _ in last_persons: last_persons_labels.append(("Person", (0, 220, 100)))
 
-            # 4. Gesture Detection (SOS)
-            is_sos, _ = gesture_detector.detect_sos(display_frame)
-
-            # 5. Risk Assessment
-            current_hour = datetime.now().hour
-            risk_level, risk_type, conf_score = analyze_risk(women_count, men_count, current_hour)
-            
+            # 3. ANALYSIS & ALERT
+            risk_level, risk_type, conf_score = analyze_risk(women_count, men_count, datetime.now().hour)
             if is_sos:
-                risk_level = 'HIGH'
-                risk_type = 'SOS_GESTURE_DETECTED'
-                conf_score = 0.99
+                risk_level, risk_type, conf_score = 'HIGH', 'SOS_GESTURE_DETECTED', 0.99
 
-            # 6. Trigger Alert System
-            current_time = time.time()
-            if risk_level in ['MEDIUM', 'HIGH'] and (current_time - last_alert_time > COOLDOWN_SECONDS):
-                print(f"🚨 THREAT DETECTED: {risk_type} | W:{women_count} M:{men_count}")
-                
+            if risk_level in ['MEDIUM', 'HIGH'] and (time.time() - last_alert_time > COOLDOWN_SECONDS):
                 payload = {
-                    "location": CAMERA_NAME,
-                    "risk_type": risk_type,
-                    "confidence_score": conf_score,
-                    "image_snapshot": encode_frame(display_frame),
-                    "women_count": women_count,
-                    "men_count": men_count
+                    "location": CAMERA_NAME, "risk_type": risk_type, "confidence_score": conf_score,
+                    "image_snapshot": encode_frame(display_frame, quality=80),
+                    "women_count": women_count, "men_count": men_count
                 }
-                
-                # Asynchronous Request using Threading to avoid blocking CV loop
-                import threading
-                def send_alert():
-                    try:
-                        requests.post(API_URL, json=payload)
-                    except Exception as e:
-                        print(f"Failed to transmit alert to backend: {e}")
-                        
-                threading.Thread(target=send_alert, daemon=True).start()
-                
-                last_alert_time = current_time
-                last_alert_text = "ALERT TRANSMITTED"
-                last_alert_clear_time = current_time + 3
+                threading.Thread(target=lambda: requests.post(API_URL, json=payload), daemon=True).start()
+                last_alert_time = time.time()
+                last_alert_text = f"ALERT: {risk_type.replace('_',' ')}"
+                last_alert_clear_time = time.time() + 3
 
-        # --- DRAWING PHASE (EVERY RUNNING FRAME) ---
+        else:
+            # While loading, show a subtle hint on screen
+            if frame_count % 30 < 15:
+                cv2.putText(display_frame, "AI LOADING...", (20, 30), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+        # ─── B. OVERLAYS ───
         for i, (x1, y1, x2, y2) in enumerate(last_persons):
-            if i < len(last_persons_labels):
-                label, color = last_persons_labels[i]
-            else:
-                label, color = "Person", (0, 255, 0)
-            cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(display_frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            label, color = last_persons_labels[i] if i < len(last_persons_labels) else ("Person", (0, 255, 0))
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 1)
+            cv2.putText(display_frame, label, (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
             
         if time.time() < last_alert_clear_time:
-            cv2.putText(display_frame, last_alert_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+            cv2.putText(display_frame, last_alert_text, (30, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        # Show Output feed locally
-        cv2.imshow(f"SafeWoman AI Core - {CAMERA_NAME}", display_frame)
+        # ─── C. STREAM ───
+        if sio.connected:
+            stream_frame = cv2.resize(display_frame, (480, 360))
+            encoded = encode_frame(stream_frame, quality=40)
+            sio.emit('camera_frame', {'cameraId': NODE_ID, 'frame': encoded})
+
+        # ─── D. CAP FPS ───
+        elapsed = time.time() - loop_start
+        wait = max(0, (1.0 / STREAM_FPS) - elapsed)
+        time.sleep(wait)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+    sio.disconnect()
 
 if __name__ == "__main__":
     main()

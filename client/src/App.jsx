@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Menu } from 'lucide-react';
@@ -13,7 +13,7 @@ import Settings from './pages/Settings';
 import ForgotPassword from './pages/ForgotPassword';
 import Sidebar from './components/Sidebar';
 
-const ProtectedRoute = ({ children }) => {
+const ProtectedLayout = () => {
   const { token, loading } = useContext(AuthContext);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
@@ -31,7 +31,6 @@ const ProtectedRoute = ({ children }) => {
       <Sidebar isOpen={isSidebarOpen} toggleSidebar={() => setSidebarOpen(!isSidebarOpen)} />
       
       <div className="flex-1 flex flex-col lg:ml-72 min-h-screen relative z-10">
-        {/* Mobile Top Bar */}
         <header className="lg:hidden h-20 bg-obsidian/80 backdrop-blur-xl border-b border-white/10 flex items-center px-4 sticky top-0 z-40 transition-all">
            <button 
              onClick={() => setSidebarOpen(true)} 
@@ -40,16 +39,17 @@ const ProtectedRoute = ({ children }) => {
               <Menu className="w-6 h-6" />
            </button>
            <div className="ml-4">
-              <h2 className="font-extrabold tracking-tighter text-white uppercase text-sm">
-                 SENTINEL<span className="text-primary ml-1">AI</span>
-              </h2>
-              <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Mobile Terminal v2.1</p>
+              <h1 className="text-lg font-black tracking-tighter text-white uppercase leading-tight">
+            Women Safety<br />
+            <span className="text-primary">Analytics</span>
+          </h1>
+              <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Mobile App v2.1</p>
            </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 lg:p-12 transition-all duration-300">
+        <main className="flex-1 p-4 md:p-8 lg:p-12 animate-in fade-in duration-500">
           <SocketProvider>
-            {children}
+            <Outlet />
           </SocketProvider>
         </main>
       </div>
@@ -62,25 +62,19 @@ function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route 
-            path="/dashboard" 
-            element={<ProtectedRoute><Dashboard /></ProtectedRoute>} 
-          />
-          <Route 
-            path="/live" 
-            element={<ProtectedRoute><LiveCamera /></ProtectedRoute>} 
-          />
-          <Route 
-            path="/history" 
-            element={<ProtectedRoute><EventHistory /></ProtectedRoute>} 
-          />
-          <Route 
-            path="/settings" 
-            element={<ProtectedRoute><Settings /></ProtectedRoute>} 
-          />
+          
+          {/* Private Routes Wrapper */}
+          <Route element={<ProtectedLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/live" element={<LiveCamera />} />
+            <Route path="/history" element={<EventHistory />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+
           {/* Default redirect */}
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>

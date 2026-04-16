@@ -5,3 +5,5 @@ mediapipe
 requests
 python-dotenv
 tf-keras
+python-socketio[client]
+websocket-client

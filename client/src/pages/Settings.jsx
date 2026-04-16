@@ -59,7 +59,7 @@ const Settings = () => {
       await axios.delete('http://localhost:5000/api/events/purge', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      alert('System purge successful. Memory buffer cleared.');
+      alert('System purge successful. Records cleared.');
     } catch (err) {
       console.error(err);
       alert('Purge failed.');
@@ -77,11 +77,11 @@ const Settings = () => {
       const events = res.data;
       
       const doc = new jsPDF();
-      doc.setFillColor(15, 23, 42); 
+      doc.setFillColor(2, 6, 23); 
       doc.rect(0, 0, 210, 40, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(22);
-      doc.text('SENTINEL AI - MASTER SECURITY AUDIT', 14, 25);
+      doc.text('WOMEN SAFETY ANALYTICS - SECURITY REPORT', 14, 25);
       doc.setFontSize(10);
       doc.text(`Total Historical Logs: ${events.length}`, 14, 33);
 
@@ -259,13 +259,7 @@ const Settings = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 p-8 bg-primary/5 border border-primary/10 rounded-[2.5rem]">
-         <Shield className="w-10 h-10 text-primary opacity-50" />
-         <div>
-            <p className="text-white font-bold text-sm">Security Integrity: Verified</p>
-            <p className="text-slate-500 text-xs mt-1">Kernel Version 2.1.0-LTS | Neural-Sync Active</p>
-         </div>
-      </div>
+
     </div>
   );
 };

@@ -54,6 +54,12 @@ app.use('/api/config', configRoutes);
 io.on('connection', (socket) => {
   console.log('🔗 Client connected:', socket.id);
   
+  // Listen for frames from Python AI Nodes
+  socket.on('camera_frame', (data) => {
+    // Relay to all other clients (React Dashboard)
+    socket.broadcast.emit('stream_frame', data);
+  });
+
   socket.on('disconnect', () => {
     console.log('❌ Client disconnected:', socket.id);
   });

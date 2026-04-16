@@ -19,8 +19,10 @@ export const SocketProvider = ({ children }) => {
     return () => newSocket.close();
   }, []);
 
+  const clearAlerts = () => setAlerts([]);
+
   return (
-    <SocketContext.Provider value={{ socket, alerts, setAlerts }}>
+    <SocketContext.Provider value={{ socket, alerts, setAlerts, clearAlerts }}>
       {children}
     </SocketContext.Provider>
   );

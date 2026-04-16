@@ -59,7 +59,7 @@ const EventHistory = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to permanently delete this neural log?')) return;
+    if (!window.confirm('Are you sure you want to permanently delete this security log?')) return;
     try {
       await axios.delete(`http://localhost:5000/api/events/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -75,12 +75,12 @@ const EventHistory = () => {
     const doc = new jsPDF();
     
     // Header
-    doc.setFillColor(15, 23, 42); // obsidian
+    doc.setFillColor(2, 6, 23); // navy-black
     doc.rect(0, 0, 210, 40, 'F');
     
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text('SENTINEL AI - SAFETY REPORT', 14, 25);
+    doc.text('WOMEN SAFETY ANALYTICS - SECURITY REPORT', 14, 25);
     
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 33);
@@ -88,7 +88,7 @@ const EventHistory = () => {
 
     // Summary Stats
     const highRisk = events.filter(e => e.risk_type.includes('SOS') || e.risk_type.includes('HIGH')).length;
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(2, 6, 23);
     doc.setFontSize(12);
     doc.text('Summary Analysis', 14, 50);
     doc.setFontSize(10);
@@ -109,7 +109,7 @@ const EventHistory = () => {
       head: [['ID', 'Timestamp', 'Location', 'Alert Type', 'Conf.', 'People']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      headStyles: { fillColor: [2, 6, 23], textColor: [255, 255, 255], fontStyle: 'bold' },
       styles: { fontSize: 8, cellPadding: 4 },
       columnStyles: {
         0: { cellWidth: 25 },
@@ -126,7 +126,7 @@ const EventHistory = () => {
     if (sortedEvents.some(e => e.image_snapshot) && finalY < 240) {
       doc.addPage();
       doc.setFontSize(14);
-      doc.text('AERIAL SNAPSHOT RECOVERY', 14, 20);
+      doc.text('ALERT PHOTOS', 14, 20);
       
       let xPos = 14;
       let yPos = 30;
@@ -159,9 +159,9 @@ const EventHistory = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white mb-2 flex items-center gap-4">
-             <HistoryIcon className="w-8 h-8 md:w-10 md:h-10 text-primary" /> Event History
+             <HistoryIcon className="w-8 h-8 md:w-10 md:h-10 text-primary" /> Security Logs
           </h2>
-          <p className="text-slate-400 font-medium tracking-tight">Post-event analytical audit trail</p>
+          <p className="text-slate-400 font-medium tracking-tight">History of recent security alerts</p>
         </div>
         
         <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 w-full lg:w-auto">
@@ -259,12 +259,12 @@ const EventHistory = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-white/[0.02] text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] border-b border-white/5">
-                  <th className="px-6 md:px-8 py-6 cursor-pointer hover:text-white" onClick={() => requestSort('_id')}>Incident Node</th>
+                  <th className="px-6 md:px-8 py-6 cursor-pointer hover:text-white" onClick={() => requestSort('_id')}>Camera ID</th>
                   <th className="px-6 md:px-8 py-6 cursor-pointer hover:text-white flex items-center gap-2" onClick={() => requestSort('timestamp')}>
-                    Chronology / Location
+                    Time / Location
                     {sortConfig.key === 'timestamp' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </th>
-                  <th className="px-6 md:px-8 py-6">Intelligence Class</th>
+                  <th className="px-6 md:px-8 py-6">Alert Type</th>
                   <th className="px-6 md:px-8 py-6">Certainty</th>
                   <th className="px-6 md:px-8 py-6">Human Count</th>
                   <th className="px-6 md:px-8 py-6 text-right pr-6 md:pr-12">Action</th>
@@ -341,7 +341,7 @@ const EventHistory = () => {
                     <td colSpan="6" className="p-24 text-center">
                       <div className="flex flex-col items-center opacity-20">
                         <HistoryIcon className="w-16 h-16 mb-4 text-slate-500" />
-                        <p className="text-lg font-black uppercase tracking-widest text-slate-500">Archival Buffer Empty</p>
+                        <p className="text-lg font-black uppercase tracking-widest text-slate-500">No Logs Found</p>
                       </div>
                     </td>
                   </tr>

@@ -24,7 +24,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       )}
 
       <div className={`
-        fixed left-0 top-0 h-screen w-72 bg-obsidian/95 backdrop-blur-3xl border-r border-white/10 z-50 transition-transform duration-500 cubic-bezier(0.4, 0, 0.2, 1)
+        fixed left-0 top-0 h-screen w-72 bg-slate-900/40 backdrop-blur-2xl border-r border-white/5 z-50 transition-transform duration-500 cubic-bezier(0.4, 0, 0.2, 1)
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-24 flex items-center justify-between px-8 border-b border-white/5">
@@ -32,8 +32,9 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             <div className="p-2 bg-primary/20 rounded-lg neon-border-primary">
               <ShieldAlert className="text-primary w-6 h-6" />
             </div>
-            <h1 className="text-xl font-extrabold tracking-tighter text-white">
-              SENTINEL<span className="text-primary">AI</span>
+            <h1 className="text-sm font-black tracking-tighter text-white uppercase leading-tight">
+              Women Safety<br />
+              <span className="text-primary">Analytics</span>
             </h1>
           </div>
           <button onClick={toggleSidebar} className="lg:hidden text-slate-400">
@@ -51,7 +52,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
               className={({ isActive }) => 
                 `flex items-center px-4 py-3.5 rounded-xl transition-all group ${
                   isActive 
-                    ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_20px_rgba(168,85,247,0.1)]' 
+                    ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_20px_rgba(0,242,255,0.1)]' 
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
                 }`
               }
